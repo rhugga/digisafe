@@ -81,17 +81,24 @@ release-check: ## Check a release could be cut: gh logged in, clean tree, branch
 	@git fetch -q origin $(RELEASE_BRANCH)
 	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/$(RELEASE_BRANCH))" || \
 		{ echo "$(RELEASE_BRANCH) isn't the same as origin/$(RELEASE_BRANCH): push (or pull) first"; exit 1; }
-	@! git rev-parse -q --verify "refs/tags/$(TAG)" >/dev/null || \
-		{ echo "tag $(TAG) already exists: bump Version in internal/app/app.go"; exit 1; }
 	@test -z "$$(git ls-remote --tags origin refs/tags/$(TAG))" || \
 		{ echo "tag $(TAG) already exists on origin: bump Version in internal/app/app.go"; exit 1; }
+	@# a local tag is fine only at HEAD: a release that stopped after tagging, picked up again
+	@if git rev-parse -q --verify "refs/tags/$(TAG)" >/dev/null; then \
+		test "$$(git rev-parse 'refs/tags/$(TAG)^{commit}')" = "$$(git rev-parse HEAD)" || \
+			{ echo "tag $(TAG) exists here, on another commit, and isn't pushed: if that release never went out,"; \
+			  echo "delete it (git tag -d $(TAG)) and run this again; else bump Version in internal/app/app.go"; exit 1; }; \
+		echo "tag $(TAG) exists here at HEAD but isn't pushed: carrying on with it"; \
+	fi
+	@! git show-ref -q --verify "refs/heads/$(TAG)" || \
+		echo "note: a branch is also called $(TAG); the tag is pushed as refs/tags/$(TAG)"
 	@test -z "$(NOTES)" || test -f "$(NOTES)" || { echo "NOTES=$(NOTES): no such file"; exit 1; }
 	@echo "ready to release $(TAG) from $$(git rev-parse --short HEAD)"
 
 .PHONY: release
 release: release-check dist ## Tag v<version>, push the tag, and publish a GitHub release with dist/
-	git tag -a $(TAG) -m "digisafe $(VERSION)"
-	git push origin $(TAG)
+	git rev-parse -q --verify "refs/tags/$(TAG)" >/dev/null || git tag -a $(TAG) -m "digisafe $(VERSION)"
+	git push origin "refs/tags/$(TAG)"
 	gh release create $(TAG) $(DIST)/* --verify-tag --title "digisafe $(VERSION)" \
 		$(if $(NOTES),--notes-file $(NOTES),--generate-notes)
 	@echo "released: $$(gh release view $(TAG) --json url -q .url)"
