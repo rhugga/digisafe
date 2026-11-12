@@ -513,17 +513,31 @@ permissions and the clipboard work there.
 ## Develop
 
 ```shell
+make all       # check, then build bin/digisafe and every platform's binary
 make check     # gofmt, vet (macOS, Linux and Windows), and the tests with the race detector
 make test      # just the tests
+make coverage  # test coverage across all packages: functions under 80%, and the total
+make coverage HTML=1   # the same, then a line-by-line report in the browser
 make build     # bin/digisafe
 make cross     # every platform into bin/
 make help      # every target
 ```
 
+The version lives in `version.sh` (`./version.sh` prints it). `make bump-version` sets a new
+one there and in its copies, the `Version` constant in `internal/app/app.go` and the file names
+in this README, and checks none is left behind; a test fails if they ever disagree.
+
+```shell
+make version                     # 0.1.0 (v0.1.0)
+make bump-version                # 0.1.0 -> 0.1.1 (TO=patch is the default)
+make bump-version TO=minor       # 0.1.1 -> 0.2.0; TO=major -> 1.0.0
+make bump-version TO=1.0.0-rc.1  # an exact version; TO=patch then releases it as 1.0.0
+```
+
 Releasing, from a clean, pushed `main`:
 
 ```shell
-# bump Version in internal/app/app.go, commit and push, then
+# make bump-version, then commit and merge that to main, then
 make release-check   # gh logged in, clean tree, main pushed, the tag v<version> unused
 make dist            # make check, then the archives and SHA256SUMS in dist/ (to look at first)
 make release         # all of that, then tag v<version>, push the tag, publish the GitHub release
@@ -531,10 +545,14 @@ make release NOTES=notes.md   # with your own release notes (default: generated 
 ```
 
 `make release` builds and checks everything before it tags, so a failure leaves no tag behind.
+If it stops after pushing the tag (`gh` not logged in, say), `make release-publish` creates the
+GitHub release from that tag and `dist/`. `gh` must be logged in to github.com itself
+(`gh auth status -h github.com`); `GH_HOST=...` releases somewhere else.
 
 Layout:
 
 ```text
+version.sh              the version (source of truth); scripts/bump-version.sh changes it
 main.go                 entry point
 internal/app            the CLI (urfave/cli v3) and the commands
 internal/tui            the record form (huh / bubbletea) and styled output (lipgloss)
