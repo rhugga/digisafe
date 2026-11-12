@@ -33,7 +33,20 @@ are handled.
 
 ## Install
 
-Requires Go 1.27 or later.
+Download a release from [GitHub releases](https://github.com/rhugga/digisafe/releases): there's
+an archive for macOS, Linux and Windows (amd64 and arm64), each holding the `digisafe` binary,
+and a `SHA256SUMS` file to check them against:
+
+```shell
+sha256sum --check --ignore-missing SHA256SUMS   # macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
+tar -xzf digisafe-0.1.0-darwin-arm64.tar.gz
+install -m 0755 digisafe-0.1.0-darwin-arm64/digisafe ~/bin/
+```
+
+The macOS binaries aren't signed or notarized: if you downloaded the archive with a browser,
+macOS blocks it the first time; `xattr -d com.apple.quarantine ~/bin/digisafe` allows it.
+
+Or with Go 1.27 or later:
 
 ```shell
 go install github.com/rhugga/digisafe@latest
@@ -506,6 +519,18 @@ make build     # bin/digisafe
 make cross     # every platform into bin/
 make help      # every target
 ```
+
+Releasing, from a clean, pushed `main`:
+
+```shell
+# bump Version in internal/app/app.go, commit and push, then
+make release-check   # gh logged in, clean tree, main pushed, the tag v<version> unused
+make dist            # make check, then the archives and SHA256SUMS in dist/ (to look at first)
+make release         # all of that, then tag v<version>, push the tag, publish the GitHub release
+make release NOTES=notes.md   # with your own release notes (default: generated from the commits)
+```
+
+`make release` builds and checks everything before it tags, so a failure leaves no tag behind.
 
 Layout:
 
