@@ -35,6 +35,7 @@ type draft struct {
 	address                        []string
 	questions                      []record.SecretQuestion
 	custom                         map[string]string
+	nameOK                         func(string) error
 }
 
 func newDraft(r *record.Record) *draft {
@@ -110,9 +111,11 @@ func splitTags(s string) []string {
 
 // Edit shows r in a form: the user moves between fields (tab, shift+tab, arrows), reviews the
 // record and saves, goes back to change it, or cancels. On Save, r gets the new values; on
-// cancel it's unchanged and Edit returns ErrCancelled.
-func (f Form) Edit(r *record.Record, title string) error {
+// cancel it's unchanged and Edit returns ErrCancelled. nameOK, if not nil, checks the name as
+// it's typed (names are unique in a safe), so a taken one is caught before the rest is filled in.
+func (f Form) Edit(r *record.Record, title string, nameOK func(string) error) error {
 	d := newDraft(r)
+	d.nameOK = nameOK
 	s := r.Schema()
 	if err := f.run(d.fieldsForm(s, title)); err != nil {
 		return err
@@ -167,6 +170,9 @@ func (d *draft) fieldsForm(s record.Schema, title string) *huh.Form {
 		huh.NewInput().Title("name").Value(&d.name).Validate(func(v string) error {
 			if strings.TrimSpace(v) == "" {
 				return errors.New("a record needs a name")
+			}
+			if d.nameOK != nil {
+				return d.nameOK(v)
 			}
 			return nil
 		}),

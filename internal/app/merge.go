@@ -68,8 +68,12 @@ func (a *App) mergeCmd() *cli.Command {
 					return err
 				}
 			}
-			fmt.Fprintf(a.Out, "%s %s into %s: %d added, %d updated from it, %d kept (newer here), %d the same\n",
+			fmt.Fprintf(a.Out, "%s %s into %s: %d added, %d updated from it, %d kept (newer here), %d the same",
 				verb, other.Safe, s.Paths.Safe, len(res.Added), len(res.Updated), len(res.Kept)+len(res.Conflicts), res.Same)
+			if n := len(res.NameClashes); n > 0 {
+				fmt.Fprintf(a.Out, ", %d skipped (name taken)", n)
+			}
+			fmt.Fprintln(a.Out)
 			return nil
 		},
 	}
@@ -104,6 +108,13 @@ func (a *App) mergeReport(res safe.MergeResult, from string) {
 	}
 	for _, r := range res.Conflicts {
 		line("conflict", r)
+	}
+	for _, r := range res.NameClashes {
+		line("skip", r)
+	}
+	if len(res.NameClashes) > 0 {
+		a.UI.Message("skip: another record here has that name (names are unique); not merged. Rename or delete one, " +
+			"then merge again")
 	}
 	if len(res.Conflicts) > 0 {
 		a.UI.Message("conflict: updated at the same time in both safes but different; this safe's version was kept "+

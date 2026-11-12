@@ -68,7 +68,7 @@ Optional, for unlocking with hardware: [age-plugin-se](https://github.com/remko/
 digisafe safe create                # once: choose a passphrase (12+ characters)
 digisafe record add login           # opens a form; fill it in, review, save
 digisafe ls                         # id, type, name, description: never secrets
-digisafe record show 4f2a9c         # one record in full; any unique id prefix works
+digisafe record show 4f2a9c         # one record in full: by id (any unique prefix) or name
 digisafe record copy 4f2a9c password  # to the clipboard, cleared after 45s
 ```
 
@@ -90,17 +90,23 @@ digisafe r c 4f2a9c password
 | ---- | --------------------- |
 | `login` | `url`, `username`, `password*`, `email_address`, `pin*`, `totp_secret*`, `token*` (an API or access token), secret questions (question, `answer*`); keeps the last 5 values of each secret (see [Previous secrets](#previous-secrets-logins)) |
 | `bank_card` | credit, debit, prepaid and gift cards: `full_name`, `card_network` (visa, mastercard, amex, ...), `card_no*`, `exp_date` (MMYY), `cvv*`, `pin*`, `zip_code`, `bank_name`, `bank_phone` |
-| `bank_account` | `account_no*`, `account_type`, `account_routing_no`, `bank_name`, `bank_phone`, `bank_url`, address (`street_1`, `street_2`, `city`, `state`, `zip_code`), secret questions (question, `answer*`) |
+| `bank_account` | `account_no*`, `secret_pin*` (the PIN your bank asks for on the phone, up to 12 digits), `account_type`, `account_routing_no`, `bank_name`, `bank_phone`, `bank_url`, address (`street_1`, `street_2`, `city`, `state`, `zip_code`), secret questions (question, `answer*`) |
 | `note` | `content*` |
 
-Every record also has a `name` (required), `description`, `tags`, `notes` and any number of
-custom fields (`key: value`, treated as secrets). `digisafe record types` prints this list.
+Every record also has a `name`, `description`, `tags`, `notes` and any number of custom fields
+(`key: value`, treated as secrets). `digisafe record types` prints this list.
+
+**Names are unique in a safe**, whatever the type, and case and extra spaces don't count: once
+there's a "My Bank", both "my bank" and " MY  BANK " are taken ("MyBank", a different
+spelling, isn't). So a name always picks out one record:
+`digisafe record show github`. A taken name is caught as you type it, in the form or at the
+prompt, and with `--name` before any secret is asked for.
 
 Some fields are checked:
 
 - `totp_secret` must be a base32 seed or an `otpauth://` URI; anything else is refused.
-- `card_no` (Luhn checksum), `exp_date` (MMYY), `cvv` (3 or 4 digits), `pin` (4 to 12 digits)
-  and `card_network` (one of visa, mastercard, amex, discover, jcb, unionpay, diners, maestro)
+- `card_no` (Luhn checksum), `exp_date` (MMYY), `cvv` (3 or 4 digits), `pin` (4 to 12 digits),
+  `secret_pin` (digits, at most 12) and `card_network` (one of visa, mastercard, amex, discover, jcb, unionpay, diners, maestro)
   only warn, since a typo, or a store's own gift card, shouldn't stop you saving. A known network
   is saved in lower case (`VISA` becomes `visa`); in the form, ctrl+e completes one.
 
@@ -226,6 +232,7 @@ digisafe ls                          # every record (same as `digisafe record li
 digisafe ls --type login             # only logins
 digisafe query github.com            # search names, descriptions, tags, urls, usernames... (digisafe q)
 digisafe record show 4f2a9c          # everything, secrets included
+digisafe record show "my bank"       # the same, by name (case and spacing don't matter)
 digisafe record show 4f2a9c --history  # plus a login's previous passwords, PINs and tokens
 digisafe record copy 4f2a9c password # copy one field; cleared after 45s
 digisafe record copy 4f2a9c card_no --timeout 10s
@@ -235,7 +242,8 @@ digisafe record del 4f2a9c           # asks first; --force doesn't
 ```
 
 - **Ids**: records have random UUIDs. Lists show the first 8 characters, and any unique prefix
-  works, like git hashes.
+  works, like git hashes. `record show` also takes the record's name; if a name is also the
+  start of another record's id, it asks for more of the id.
 - **list and query** print `ID TYPE NAME DESCRIPTION UPDATED`, never a secret. They print which
   safe they read on stderr, so you always know which one you're looking at. `query` searches the
   name, description, tags and every field that isn't secret (`url`, `username`, `bank_name`, the
@@ -319,14 +327,15 @@ context); the other safe isn't changed. Records are matched by id:
   other version's password, PIN, TOTP secret and token in its history if they differ, and the two
   histories are combined;
 - in both, updated at exactly the same time but different: this safe's version is kept, and the
-  merge says so.
+  merge says so;
+- a record whose name another record here already has (a different id: the same login added to
+  each safe separately, say): not merged, and listed as skipped. Rename or delete one, then merge
+  again.
 
 It prints what it adds and updates (on stderr), then a summary. Merging the same safe again
 changes nothing. A safe in another directory has its own key, so its passphrase is asked too.
 
-It's a union, so two things to know: a record deleted from one safe comes back if the other
-still has it; and the same login added separately to each safe has two ids, so it ends up twice
-(delete one).
+It's a union, so a record deleted from one safe comes back if the other still has it.
 
 ## Keys: passphrase, Touch ID, YubiKey
 
@@ -436,7 +445,8 @@ digisafe safe import records.json --replace  # replace records whose id already 
 
 `export` refuses to overwrite a file without `--force` and asks before writing unless `--yes`.
 `import` skips records already in the safe (by id) unless `--replace`, which keeps the replaced
-login's secrets in its history, as an edit would. A file with the same id twice is refused. Both
+login's secrets in its history, as an edit would. A file with the same id twice, the same name
+twice, or a name another record already has is refused, and nothing is imported. Both
 remind you that the plaintext file still holds your secrets.
 
 Every save keeps the previous version: `mysafe.age.1` (newest) to `mysafe.age.5`, encrypted
@@ -454,7 +464,7 @@ digisafe safe (s)
 digisafe record (rec, r)
   add (a) <type> [--plain]          the form (or prompts); see "From flags" and "From JSON"
   list (l, ls) [--type t]           id, type, name, description: never secrets
-  show (s) <id> [--history] [--plain]  one record in full, secrets included (and previous secrets)
+  show (s) <id|name> [--history] [--plain]  one record in full, secrets included (and previous secrets)
   edit (e) [id] [--type t] [--plain]  the form, filled in; no id: pick from a list (of type t)
   del (d, rm) <id> [--force]        delete (asks first)
   copy (c) <id> <field> [--timeout 45s]  copy a field to the clipboard
@@ -525,7 +535,9 @@ make help      # every target
 
 The version lives in `version.sh` (`./version.sh` prints it). `make bump-version` sets a new
 one there and in its copies, the `Version` constant in `internal/app/app.go` and the file names
-in this README, and checks none is left behind; a test fails if they ever disagree.
+in this README, and checks none is left behind; a test fails if they ever disagree. It also
+turns the **Unreleased** section of [RELEASE_NOTES.md](RELEASE_NOTES.md) into the new version's
+(note changes there as you make them).
 
 ```shell
 make version                     # 0.1.0 (v0.1.0)
@@ -537,11 +549,12 @@ make bump-version TO=1.0.0-rc.1  # an exact version; TO=patch then releases it a
 Releasing, from a clean, pushed `main`:
 
 ```shell
-# make bump-version, then commit and merge that to main, then
+# make bump-version, check RELEASE_NOTES.md, commit and merge that to main, then
+make release-notes   # the notes the release will get: this version's section of RELEASE_NOTES.md
 make release-check   # gh logged in, clean tree, main pushed, the tag v<version> unused
 make dist            # make check, then the archives and SHA256SUMS in dist/ (to look at first)
 make release         # all of that, then tag v<version>, push the tag, publish the GitHub release
-make release NOTES=notes.md   # with your own release notes (default: generated from the commits)
+make release NOTES=notes.md   # other notes (default: RELEASE_NOTES.md's section, else generated)
 ```
 
 `make release` builds and checks everything before it tags, so a failure leaves no tag behind.
@@ -552,7 +565,8 @@ GitHub release from that tag and `dist/`. `gh` must be logged in to github.com i
 Layout:
 
 ```text
-version.sh              the version (source of truth); scripts/bump-version.sh changes it
+version.sh              the version (source of truth); make bump-version changes it
+RELEASE_NOTES.md        what changed in each release; make release publishes the version's part
 main.go                 entry point
 internal/app            the CLI (urfave/cli v3) and the commands
 internal/tui            the record form (huh / bubbletea) and styled output (lipgloss)

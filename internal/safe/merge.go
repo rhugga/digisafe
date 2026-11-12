@@ -16,11 +16,16 @@ type MergeResult struct {
 	Updated   []*record.Record // in both; the incoming version was newer and replaced ours
 	Kept      []*record.Record // in both; ours was newer (its history may have gained secrets)
 	Conflicts []*record.Record // in both, updated at the same time but different: ours kept
-	Same      int              // identical in both
-	Changed   bool             // the document changed and needs saving
+	// NameClashes are incoming records not merged because another record here (a different id)
+	// has their name: the same thing added to each safe separately, say. They stay in the other
+	// safe; rename or delete one and merge again.
+	NameClashes []*record.Record
+	Same        int  // identical in both
+	Changed     bool // the document changed and needs saving
 }
 
-// Merge adds the incoming records to d. A record in both (same id) keeps whichever version was
+// Merge adds the incoming records to d (except those whose name another record here has: see
+// NameClashes). A record in both (same id) keeps whichever version was
 // updated most recently, with that version's updated_at; on a tie with different contents, ours
 // stays and the record is reported as a conflict. The losing version's secrets aren't lost: a
 // login's history gets the ones that differ, and both histories are combined. Merging the same
@@ -33,6 +38,11 @@ func (d *Document) Merge(in []*record.Record) (MergeResult, error) {
 			return MergeResult{}, fmt.Errorf("%s (%s): %w", r.ID, record.Printable(r.Name), err)
 		}
 		cur := d.Get(r.ID)
+		takesName := cur == nil || r.UpdatedAt.After(cur.UpdatedAt) // the incoming version would be ours
+		if takesName && d.NameTaken(r.Name, r.ID) != nil {
+			res.NameClashes = append(res.NameClashes, r)
+			continue
+		}
 		switch {
 		case cur == nil:
 			if err := d.Add(r); err != nil {

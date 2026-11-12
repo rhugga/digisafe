@@ -108,11 +108,11 @@ func TestTypes(t *testing.T) {
 func TestBankAccountAddressAndCustomFields(t *testing.T) {
 	h := newHarness(t)
 	h.must([]string{pass, pass}, "safe", "create")
-	// name, description, tags, the 6 bank fields, the 5 address fields, a secret question, one
+	// name, description, tags, the 7 bank fields, the 5 address fields, a secret question, one
 	// custom field, notes
 	h.must([]string{pass,
 		"Credit Union", "checking", "money",
-		"123456789", "checking", "021000021", "CU", "555-0100", "https://cu.example.com",
+		"123456789", "4242", "checking", "021000021", "CU", "555-0100", "https://cu.example.com",
 		"1 Main St", "", "Springfield", "IL", "62701",
 		"mother's maiden name?", "smith", "",
 		"branch", "downtown", "",
@@ -120,7 +120,7 @@ func TestBankAccountAddressAndCustomFields(t *testing.T) {
 		"record", "add", "bank_account")
 	id := h.id("credit")
 	out := h.must([]string{pass}, "record", "show", id[:6])
-	for _, want := range []string{"address.city:", "Springfield", "question 1:", "mother's maiden name?", "answer 1:", "smith",
+	for _, want := range []string{"secret_pin:", "4242", "address.city:", "Springfield", "question 1:", "mother's maiden name?", "answer 1:", "smith",
 		"custom.branch:", "downtown", "notes:", "  multi", "  line notes"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("show is missing %q:\n%s", want, out)
@@ -130,7 +130,7 @@ func TestBankAccountAddressAndCustomFields(t *testing.T) {
 	// edit: clear the tags, keep the fields, change the city, remove one custom field, add another
 	h.must([]string{pass,
 		"", "", "-",
-		"", "", "", "", "", "",
+		"", "", "", "", "", "", "",
 		"", "", "Shelbyville", "", "",
 		"",
 		"branch", "-", "vault", "B12", "",

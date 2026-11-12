@@ -11,6 +11,7 @@ import (
 // fakeForm stands in for the interactive form: it records what it was shown and applies edit.
 type fakeForm struct {
 	titles []string
+	nameOK func(string) error // the last one Edit was given
 	edit   func(r *record.Record) error
 	pick   func(rs []*record.Record) (*record.Record, error)
 }
@@ -20,8 +21,8 @@ func (f *fakeForm) Pick(rs []*record.Record, title string) (*record.Record, erro
 	return f.pick(rs)
 }
 
-func (f *fakeForm) Edit(r *record.Record, title string) error {
-	f.titles = append(f.titles, title)
+func (f *fakeForm) Edit(r *record.Record, title string, nameOK func(string) error) error {
+	f.titles, f.nameOK = append(f.titles, title), nameOK
 	return f.edit(r)
 }
 

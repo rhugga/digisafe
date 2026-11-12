@@ -74,6 +74,12 @@ func (r *Record) Upgrade() {
 	}
 }
 
+// NameKey is what makes two names the same: case and runs of spaces don't count, so "GitHub" and
+// " github " name the same record. Names are unique in a safe by this key.
+func NameKey(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
 // unsafeRune reports whether printing r to a terminal could do more than show a character:
 // control characters (escape sequences start with one) and the Unicode bidirectional overrides,
 // which can make text read differently from what it is. Newline and tab are fine.

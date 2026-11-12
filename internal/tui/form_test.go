@@ -138,7 +138,7 @@ func TestAddALogin(t *testing.T) {
 		[]string{down, down, down, down, enter},
 		[]string{enter},
 	)
-	if err := f.Edit(r, "New login"); err != nil {
+	if err := f.Edit(r, "New login", nil); err != nil {
 		t.Fatal(err)
 	}
 	if d.forms != 3 {
@@ -166,7 +166,7 @@ func TestNameIsRequired(t *testing.T) {
 		[]string{enter, "x", enter, enter, enter, enter, enter},
 		[]string{enter},
 	)
-	if err := f.Edit(r, "New note"); err != nil {
+	if err := f.Edit(r, "New note", nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Name != "x" {
@@ -182,7 +182,7 @@ func TestStrictAndLooseChecks(t *testing.T) {
 		[]string{"Visa", enter, enter, enter, enter, "mas", ctrlE, enter, "1234", enter, enter, enter, enter, enter, enter, enter, enter},
 		[]string{enter},
 	)
-	if err := f.Edit(r, "New bank_card"); err != nil {
+	if err := f.Edit(r, "New bank_card", nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Fields["card_no"] != "1234" || r.Fields["card_network"] != "mastercard" {
@@ -195,7 +195,7 @@ func TestStrictAndLooseChecks(t *testing.T) {
 		[]string{"L", enter, enter, enter, enter, enter, enter, enter, enter, "!!", enter, ctrlU, "JBSWY3DPEHPK3PXP", enter, enter, enter},
 		[]string{enter},
 	)
-	if err := f.Edit(l, "New login"); err != nil {
+	if err := f.Edit(l, "New login", nil); err != nil {
 		t.Fatal(err)
 	}
 	if l.Fields["totp_secret"] != "JBSWY3DPEHPK3PXP" {
@@ -232,8 +232,8 @@ func TestEditAnAccount(t *testing.T) {
 	r.Custom = map[string]string{"old": "x"}
 	orig := *r
 	f, _, _ := newForm(t,
-		// keep everything on the first page (9 fields), then clear the city
-		[]string{enter, enter, enter, enter, enter, enter, enter, enter, enter,
+		// keep everything on the first page (10 fields), then clear the city
+		[]string{enter, enter, enter, enter, enter, enter, enter, enter, enter, enter,
 			enter, enter, ctrlU, enter, enter, enter, enter},
 		// review: custom fields (save, edit, secret questions, custom = 4th)
 		[]string{down, down, down, enter},
@@ -247,7 +247,7 @@ func TestEditAnAccount(t *testing.T) {
 		// save
 		[]string{enter},
 	)
-	if err := f.Edit(r, "Edit bank_account"); err != nil {
+	if err := f.Edit(r, "Edit bank_account", nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Name != "Checking" || r.Fields["bank_name"] != "CU" || r.Address != nil ||
@@ -271,7 +271,7 @@ func TestSecretQuestions(t *testing.T) {
 		[]string{down, down, enter}, // done
 		[]string{enter},             // save
 	)
-	if err := f.Edit(r, "Edit login"); err != nil {
+	if err := f.Edit(r, "Edit login", nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := []record.SecretQuestion{{Question: "street?", Answer: "elm"}}; !reflect.DeepEqual(r.SecretQuestions, want) {
@@ -285,7 +285,7 @@ func TestCancel(t *testing.T) {
 	before := *r
 	// ctrl+c in the fields
 	f, _, _ := newForm(t, []string{ctrlU, "changed", ctrlC})
-	if err := f.Edit(r, "Edit note"); !errors.Is(err, ErrCancelled) {
+	if err := f.Edit(r, "Edit note", nil); !errors.Is(err, ErrCancelled) {
 		t.Errorf("err = %v", err)
 	}
 	// Cancel at the review: the last option (save, edit, custom, show, cancel)
@@ -293,7 +293,7 @@ func TestCancel(t *testing.T) {
 		[]string{ctrlU, "changed", enter, enter, enter, enter, enter},
 		[]string{down, down, down, down, enter},
 	)
-	if err := f.Edit(r, "Edit note"); !errors.Is(err, ErrCancelled) {
+	if err := f.Edit(r, "Edit note", nil); !errors.Is(err, ErrCancelled) {
 		t.Errorf("err = %v", err)
 	}
 	if !reflect.DeepEqual(*r, before) {
@@ -309,7 +309,7 @@ func TestGoBackToTheFields(t *testing.T) {
 		[]string{ctrlU, "second", enter, enter, enter, enter, enter},
 		[]string{enter},
 	)
-	if err := f.Edit(r, "New note"); err != nil {
+	if err := f.Edit(r, "New note", nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Name != "second" || d.forms != 4 {
@@ -381,5 +381,26 @@ func TestPickShowsNoSecrets(t *testing.T) {
 	}
 	if !strings.Contains(view, shortID(r.ID)+"  login  GitHub  · work account") || strings.Contains(view, "hunter2") {
 		t.Errorf("list:\n%s", view)
+	}
+}
+
+// A taken name keeps the form on the name field until it's changed.
+func TestNameCheck(t *testing.T) {
+	r, _ := record.New("note", time.Now())
+	taken := func(n string) error {
+		if record.NameKey(n) == "bank" {
+			return errors.New("taken")
+		}
+		return nil
+	}
+	f, _, _ := newForm(t,
+		[]string{"Bank", enter, ctrlU, "Bank 2", enter, enter, enter, enter, enter},
+		[]string{enter},
+	)
+	if err := f.Edit(r, "New note", taken); err != nil {
+		t.Fatal(err)
+	}
+	if r.Name != "Bank 2" {
+		t.Errorf("name = %q", r.Name)
 	}
 }

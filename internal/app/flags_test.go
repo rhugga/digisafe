@@ -63,6 +63,7 @@ func TestFieldFlagMistakes(t *testing.T) {
 		{[]string{"record", "add", "bank_card", "--name", "x", "--field", "card_no=4111111111111111"}, "card_no is secret"},
 		{[]string{"record", "add", "bank_card", "--name", "x", "--field", "pin=1234"}, "pin is secret"},
 		{[]string{"record", "add", "login", "--name", "x", "--field", "token=t"}, "token is secret"},
+		{[]string{"record", "add", "bank_account", "--name", "x", "--field", "secret_pin=1234"}, "secret_pin is secret"},
 		{[]string{"record", "add", "login", "--name", "x", "--field", "colour=blue"}, "have no field colour"},
 		{[]string{"record", "add", "login", "--name", "x", "--field", "noequals"}, "want name=value"},
 		{[]string{"record", "add", "login", "--name", "x", "--field", "address.city=x"}, "have no address"},

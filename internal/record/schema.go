@@ -76,6 +76,8 @@ var Schemas = map[string]Schema{
 		Description: "a bank account",
 		Fields: []FieldSpec{
 			{Name: "account_no", Label: "account number", Secret: true},
+			{Name: "secret_pin", Label: "secret PIN", Secret: true,
+				Hint: "the PIN your bank asks for on the phone; up to 12 digits", Check: CheckSecretPIN},
 			{Name: "account_type", Label: "account type", Hint: "e.g. checking, savings"},
 			{Name: "account_routing_no", Label: "routing number"},
 			{Name: "bank_name", Label: "bank name"},
@@ -146,9 +148,10 @@ func TypeNames() []string {
 }
 
 var (
-	expDateRe = regexp.MustCompile(`^(0[1-9]|1[0-2])[0-9]{2}$`)
-	cvvRe     = regexp.MustCompile(`^[0-9]{3,4}$`)
-	pinRe     = regexp.MustCompile(`^[0-9]{4,12}$`)
+	expDateRe   = regexp.MustCompile(`^(0[1-9]|1[0-2])[0-9]{2}$`)
+	cvvRe       = regexp.MustCompile(`^[0-9]{3,4}$`)
+	pinRe       = regexp.MustCompile(`^[0-9]{4,12}$`)
+	secretPINRe = regexp.MustCompile(`^[0-9]{1,12}$`)
 )
 
 // CardNetworks are the usual card networks (card_network).
@@ -163,6 +166,14 @@ func CheckCardNetwork(v string) string {
 		}
 	}
 	return "not a network digisafe knows (" + strings.Join(CardNetworks, ", ") + ")"
+}
+
+// CheckSecretPIN checks a telephone-banking PIN is digits, at most 12 of them.
+func CheckSecretPIN(v string) string {
+	if !secretPINRe.MatchString(v) {
+		return "want digits, at most 12"
+	}
+	return ""
 }
 
 // CheckPIN checks a card PIN is 4 to 12 digits.

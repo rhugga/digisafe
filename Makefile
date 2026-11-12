@@ -12,7 +12,8 @@ PLATFORMS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 win
 LDFLAGS   := -s -w
 # releases are cut from this branch, which must be pushed
 RELEASE_BRANCH ?= main
-# release notes: NOTES=file, else GitHub's notes generated from the commits since the last release
+# release notes: NOTES=file, else this version's section of RELEASE_NOTES.md, else GitHub's
+# notes generated from the commits since the last release
 NOTES ?=
 # where the releases go (gh must be logged in to it, not just to some host)
 GH_HOST ?= github.com
@@ -23,7 +24,7 @@ SHA256    := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || e
 .PHONY: help
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} \
-		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 } \
+		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2 } \
 		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 ##@ Build
@@ -59,10 +60,48 @@ clean: ## Remove build output
 version: ## Print the version (from version.sh) and the tag a release would get
 	@echo "$(VERSION) ($(TAG))"
 
+# bump-version: the new version from TO (patch on a pre-release releases it: 1.0.0-rc.1 becomes
+# 1.0.0), then replace() puts it where the version is copied: version.sh, the Version constant,
+# and the release file names in the docs. Only those exact strings change (go.mod and go.sum
+# have unrelated "v0.1.0"s), and RELEASE_NOTES.md keeps its old versions: its "## Unreleased"
+# section becomes the new version's, under a fresh empty one.
 TO ?= patch
+SEMVER := ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$
 .PHONY: bump-version
 bump-version: ## Set a new version everywhere: TO=patch (default), minor, major or X.Y.Z
-	@sh scripts/bump-version.sh $(TO)
+	@set -eu; old='$(VERSION)'; \
+	echo "$$old" | grep -Eq '$(SEMVER)' || { echo "version.sh: '$$old' isn't a version (X.Y.Z)" >&2; exit 1; }; \
+	core=$${old%%-*}; major=$${core%%.*}; rest=$${core#*.}; minor=$${rest%%.*}; patch=$${rest#*.}; \
+	case '$(TO)' in \
+		major) new="$$((major + 1)).0.0" ;; \
+		minor) new="$$major.$$((minor + 1)).0" ;; \
+		patch) if [ "$$core" != "$$old" ]; then new=$$core; else new="$$major.$$minor.$$((patch + 1))"; fi ;; \
+		*) new='$(TO)'; new=$${new#v} ;; \
+	esac; \
+	echo "$$new" | grep -Eq '$(SEMVER)' || { echo "'$$new' isn't a version: want TO=patch, minor, major, X.Y.Z or X.Y.Z-pre" >&2; exit 1; }; \
+	[ "$$new" != "$$old" ] || { echo "the version is already $$old" >&2; exit 1; }; \
+	replace() { \
+		grep -qF -- "$$2" "$$1" || { echo "$$1: '$$2' not found" >&2; exit 1; }; \
+		tmp=$$(mktemp); \
+		awk -v from="$$2" -v to="$$3" '{ out = ""; while ((i = index($$0, from)) > 0) { out = out substr($$0, 1, i - 1) to; $$0 = substr($$0, i + length(from)) } print out $$0 }' "$$1" > "$$tmp"; \
+		cat "$$tmp" > "$$1"; rm -f "$$tmp"; \
+	}; \
+	replace version.sh "VERSION=$$old" "VERSION=$$new"; \
+	replace internal/app/app.go "const Version = \"$$old\"" "const Version = \"$$new\""; \
+	for doc in *.md; do \
+		[ "$$doc" != RELEASE_NOTES.md ] || continue; \
+		! grep -qF -- "digisafe-$$old-" "$$doc" || replace "$$doc" "digisafe-$$old-" "digisafe-$$new-"; \
+	done; \
+	if grep -qx '## Unreleased' RELEASE_NOTES.md; then \
+		tmp=$$(mktemp); \
+		awk -v h="## $$new ($$(date +%Y-%m-%d))" '$$0 == "## Unreleased" && !done { print; print ""; print h; done = 1; next } { print }' \
+			RELEASE_NOTES.md > "$$tmp"; \
+		cat "$$tmp" > RELEASE_NOTES.md; rm -f "$$tmp"; \
+	else echo "note: RELEASE_NOTES.md has no '## Unreleased' section to make $$new's" >&2; fi; \
+	left=$$(grep -nF -e "VERSION=$$old" -e "const Version = \"$$old\"" version.sh internal/app/app.go || true); \
+	[ -z "$$left" ] || { echo "still $$old:" >&2; echo "$$left" >&2; exit 1; }; \
+	echo "version $$old -> $$new"; git --no-pager diff --stat 2>/dev/null || true; \
+	echo "next: write $$new's notes in RELEASE_NOTES.md, make check, commit, merge to main, then make release"
 
 .PHONY: dist
 dist: check ## Build the release archives and SHA256SUMS into dist/ (runs check first)
@@ -104,6 +143,8 @@ release-check: ## Check a release could be cut: gh logged in, clean tree, branch
 	@! git show-ref -q --verify "refs/heads/$(TAG)" || \
 		echo "note: a branch is also called $(TAG); the tag is pushed as refs/tags/$(TAG)"
 	@test -z "$(NOTES)" || test -f "$(NOTES)" || { echo "NOTES=$(NOTES): no such file"; exit 1; }
+	@test -n "$(NOTES)" || test -n "$$($(MAKE) --no-print-directory -s release-notes)" || \
+		echo "note: RELEASE_NOTES.md has no $(VERSION) section; the release will get GitHub's generated notes"
 	@echo "ready to release $(TAG) from $$(git rev-parse --short HEAD)"
 
 .PHONY: release
@@ -121,9 +162,21 @@ release-publish: ## Publish the GitHub release for v<version> from dist/ (the ta
 	@! gh release view $(TAG) >/dev/null 2>&1 || { echo "the $(TAG) release already exists"; exit 1; }
 	@test -f $(DIST)/SHA256SUMS || $(MAKE) --no-print-directory dist
 	@test -z "$(NOTES)" || test -f "$(NOTES)" || { echo "NOTES=$(NOTES): no such file"; exit 1; }
-	gh release create $(TAG) $(DIST)/* --verify-tag --title "digisafe $(VERSION)" \
-		$(if $(NOTES),--notes-file $(NOTES),--generate-notes)
+	@notes='$(NOTES)'; \
+	if [ -z "$$notes" ]; then \
+		notes=$$(mktemp); $(MAKE) --no-print-directory -s release-notes > "$$notes"; \
+		[ -s "$$notes" ] || { rm -f "$$notes"; notes=; }; \
+	fi; \
+	if [ -n "$$notes" ]; then how="--notes-file $$notes"; else how=--generate-notes; \
+		echo "RELEASE_NOTES.md has no $(VERSION) section: using GitHub's generated notes"; fi; \
+	echo "gh release create $(TAG) $(DIST)/* --verify-tag --title \"digisafe $(VERSION)\" $$how"; \
+	gh release create $(TAG) $(DIST)/* --verify-tag --title "digisafe $(VERSION)" $$how
 	@echo "released: $$(gh release view $(TAG) --json url -q .url)"
+
+.PHONY: release-notes
+release-notes: ## Print this version's section of RELEASE_NOTES.md (what make release publishes)
+	@awk -v v='$(VERSION)' '/^## / { p = ($$2 == v); next } p' RELEASE_NOTES.md | \
+		awk 'NF { started = 1 } started' # without the blank lines at the top
 
 ##@ Check
 

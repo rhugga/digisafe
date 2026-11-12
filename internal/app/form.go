@@ -20,8 +20,9 @@ func label(name, hint string) string {
 	return name
 }
 
-// fill prompts for every field of a new record. Empty answers leave fields empty.
-func (a *App) fill(r *record.Record) error {
+// fill prompts for every field of a new record. Empty answers leave fields empty. nameOK checks
+// the name (unique in the safe); a taken one is asked again.
+func (a *App) fill(r *record.Record, nameOK func(string) error) error {
 	s := r.Schema()
 	a.UI.Message("new %s: press Enter to leave a field empty; secret fields are not echoed", r.Type)
 	for r.Name == "" {
@@ -29,8 +30,13 @@ func (a *App) fill(r *record.Record) error {
 		if err != nil {
 			return err
 		}
-		if r.Name = strings.TrimSpace(v); r.Name == "" {
+		r.Name = strings.TrimSpace(v)
+		switch err := nameOK(r.Name); {
+		case r.Name == "":
 			a.UI.Message("a record needs a name")
+		case err != nil:
+			a.UI.Message("%v; pick another", err)
+			r.Name = ""
 		}
 	}
 	var err error
@@ -174,8 +180,9 @@ func (a *App) askCustom(r *record.Record) error {
 	}
 }
 
-// edit prompts for every field of r: Enter keeps a value, "-" clears it.
-func (a *App) edit(r *record.Record) error {
+// edit prompts for every field of r: Enter keeps a value, "-" clears it. nameOK checks a new name
+// (unique in the safe); a taken one is asked again.
+func (a *App) edit(r *record.Record, nameOK func(string) error) error {
 	s := r.Schema()
 	a.UI.Message("editing %s %s: Enter keeps a value, %q clears it", r.Type, shortID(r.ID), clearValue)
 	keep := func(p, cur string) (string, error) {
@@ -195,14 +202,22 @@ func (a *App) edit(r *record.Record) error {
 		return v, nil
 	}
 	var err error
-	for {
-		if r.Name, err = keep("name", r.Name); err != nil {
+	for name := r.Name; ; {
+		if name, err = keep("name", name); err != nil {
 			return err
 		}
-		if r.Name != "" {
-			break
+		if name == "" {
+			a.UI.Message("a record needs a name")
+			name = r.Name
+			continue
 		}
-		a.UI.Message("a record needs a name")
+		if err := nameOK(name); err != nil {
+			a.UI.Message("%v; pick another", err)
+			name = r.Name
+			continue
+		}
+		r.Name = name
+		break
 	}
 	if r.Description, err = keep("description", r.Description); err != nil {
 		return err

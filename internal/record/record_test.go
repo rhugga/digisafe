@@ -335,3 +335,21 @@ func TestMatchesNonSecretFields(t *testing.T) {
 		t.Error("bank account: the address should match, the account number shouldn't")
 	}
 }
+
+func TestNameKey(t *testing.T) {
+	if NameKey(" My   GitHub ") != NameKey("my github") || NameKey("a b") == NameKey("ab") || NameKey("") != "" {
+		t.Error("NameKey")
+	}
+}
+
+func TestSecretPIN(t *testing.T) {
+	f, ok := Schemas["bank_account"].Field("secret_pin")
+	if !ok || !f.Secret {
+		t.Fatalf("secret_pin: %+v, %v", f, ok)
+	}
+	for v, want := range map[string]bool{"1": true, "123456789012": true, "1234567890123": false, "12 34": false, "abc": false} {
+		if (CheckSecretPIN(v) == "") != want {
+			t.Errorf("CheckSecretPIN(%q) ok=%v, want %v", v, !want, want)
+		}
+	}
+}

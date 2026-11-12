@@ -98,7 +98,7 @@ Every record has the common fields:
 | ----- | ----- |
 | `id` | UUID v4 (random). The CLI shows the first 8 characters and accepts any unique prefix, like git hashes. Not v7: its leading timestamp makes ids created close together share a long prefix |
 | `type` | `bank_card`, `bank_account`, `login` or `note` (`credit_card`, the old name for `bank_card`, is read as it) |
-| `name` | required; searchable |
+| `name` | required; unique in the safe, ignoring case and extra spaces (`record.NameKey`); searchable |
 | `description` | searchable |
 | `tags` | list; searchable |
 | `notes` | free text |
@@ -113,7 +113,8 @@ Type-specific fields (`*` = secret: never echoed when typed, shown only by `show
   front for Amex), `pin*` (4 to 12 digits), `zip_code`, `bank_name`, `bank_phone`. `card_no` gets
   a Luhn check; `exp_date`, `cvv`, `pin` and `card_network` a format check: warnings, not errors.
   A known network is saved in lower case.
-- **bank_account**: `account_no*`, `account_type` (e.g. checking, savings), `account_routing_no`,
+- **bank_account**: `account_no*`, `secret_pin*` (the PIN for telephone banking: digits, at most 12;
+  a warning otherwise), `account_type` (e.g. checking, savings), `account_routing_no`,
   `bank_name`, `bank_phone`, `bank_url`, an `address` (`street_1`, `street_2`, `city`, `state`,
   `zip_code`), and `secret_questions`.
 - **login**: `url`, `username`, `password*`, `email_address`, `pin*`, `totp_secret*` (a base32 TOTP
@@ -176,7 +177,7 @@ digisafe record (rec, r)
                                     the secret fields, unless --no-prompt
   add <type> --file f.json          read the record from a JSON file (- reads stdin)
   list (l, ls) [--type t]           list records: id, type, name, description (never secrets)
-  show (s) <id> [--history] [--plain]  show one record in full, secrets included (and previous secrets)
+  show (s) <id|name> [--history] [--plain]  show one record in full, secrets included (and previous secrets)
   edit (e) [id] [--type t] [--plain]  edit a record in the form; no id: pick it from a list (of type t)
   del (d, rm) <id> [--force]        delete a record (asks first unless --force)
   copy (c) <id> <field>             copy a field to the clipboard, cleared after 45s (--timeout)
@@ -257,7 +258,22 @@ twice, so a repeated merge changes nothing and saves nothing.
 
 The other safe is read under its own lock with its own key, or, in the same directory, with the
 current safe's keys and lock (`Safe.ReadSibling`). It is never written. There are no
-tombstones: a record deleted in one safe returns from the other.
+tombstones: a record deleted in one safe returns from the other. An incoming record that would
+take a name another record here has (a different id) isn't merged: it's reported as skipped
+(`MergeResult.NameClashes`).
+
+### Names and lookups
+
+Names are unique in a safe by `record.NameKey` (lower case, runs of spaces collapsed).
+`Document.Add` refuses a taken name, so every way in checks it: the form and the prompts as
+it's typed, `--name` before the secret prompts, `edit` before saving (also against a save by
+another digisafe meanwhile), `import` (the whole file or nothing) and `merge` (skipped). A safe
+written before names were unique still opens; looking up a duplicated name lists the ids, and
+editing one of them asks for a new name.
+
+`record show` finds a record with `Document.Lookup`: a full id first, then the name, then a
+unique id prefix. A ref that is one record's name and the start of another's id is an error
+asking for more of the id.
 
 ## Handling secrets
 

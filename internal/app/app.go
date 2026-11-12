@@ -46,7 +46,8 @@ func (systemClipboard) ClearIfUnchanged(sum string, d time.Duration) error {
 // RecordForm is the interactive record editor `record add` and `record edit` use on a
 // terminal (tui.Form); without one they prompt field by field.
 type RecordForm interface {
-	Edit(r *record.Record, title string) error
+	// Edit fills in or changes r; nameOK checks the name as it's typed (nil: any name).
+	Edit(r *record.Record, title string, nameOK func(string) error) error
 	// Pick lets the user choose one of rs (`record edit` without an id).
 	Pick(rs []*record.Record, title string) (*record.Record, error)
 }

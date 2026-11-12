@@ -99,6 +99,73 @@ func (d *Document) Find(id string) (*record.Record, error) {
 	return nil, fmt.Errorf("id %q matches %d records, give more of it: %s", id, len(matches), strings.Join(names, ", "))
 }
 
+// Named returns the records named name (by record.NameKey). There's at most one, unless the
+// safe was written before names had to be unique.
+func (d *Document) Named(name string) []*record.Record {
+	key := record.NameKey(name)
+	var out []*record.Record
+	for _, r := range d.Records {
+		if key != "" && record.NameKey(r.Name) == key {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// NameTaken returns another record (not id) already called name, or nil.
+func (d *Document) NameTaken(name, id string) *record.Record {
+	for _, r := range d.Named(name) {
+		if r.ID != id {
+			return r
+		}
+	}
+	return nil
+}
+
+// ErrNameTaken is returned when a record would take a name another record has.
+var ErrNameTaken = errors.New("names must be unique")
+
+// CheckName reports, as an error for the user, whether record id can be called name.
+func (d *Document) CheckName(name, id string) error {
+	if o := d.NameTaken(name, id); o != nil {
+		return fmt.Errorf("%w: %s %s is already called %q", ErrNameTaken, o.Type, o.ID[:min(len(o.ID), 8)], record.Printable(o.Name))
+	}
+	return nil
+}
+
+// Lookup finds a record by its id, a unique start of its id, or its name (case and spacing
+// don't matter). A full id wins; a name and an id prefix that point at different records is an
+// error asking for more of the id.
+func (d *Document) Lookup(ref string) (*record.Record, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, ErrNotFound
+	}
+	if r := d.Get(strings.ToLower(ref)); r != nil {
+		return r, nil
+	}
+	named := d.Named(ref)
+	if len(named) > 1 {
+		var ids []string
+		for _, r := range named {
+			ids = append(ids, r.ID)
+		}
+		return nil, fmt.Errorf("%d records are called %q (from before names had to be unique): use the id, one of %s",
+			len(named), record.Printable(ref), strings.Join(ids, ", "))
+	}
+	byID, idErr := d.Find(ref)
+	switch {
+	case len(named) == 1 && (idErr != nil || byID == named[0]):
+		return named[0], nil
+	case len(named) == 1:
+		return nil, fmt.Errorf("%q is the name of %s and the start of %s's id: give more of the id",
+			record.Printable(ref), named[0].ID[:8], byID.ID)
+	case errors.Is(idErr, ErrNotFound):
+		return nil, fmt.Errorf("no record with the id or name %q", record.Printable(ref))
+	}
+	return byID, idErr
+}
+
 // Get returns the record with exactly this id, or nil.
 func (d *Document) Get(id string) *record.Record {
 	for _, r := range d.Records {
@@ -109,10 +176,13 @@ func (d *Document) Get(id string) *record.Record {
 	return nil
 }
 
-// Add appends a record. Its id must be new.
+// Add appends a record. Its id must be new, and its name not another record's.
 func (d *Document) Add(r *record.Record) error {
 	if d.Get(r.ID) != nil {
 		return fmt.Errorf("a record with id %s already exists", r.ID)
+	}
+	if err := d.CheckName(r.Name, r.ID); err != nil {
+		return err
 	}
 	d.Records = append(d.Records, r)
 	return nil

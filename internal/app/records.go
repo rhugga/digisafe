@@ -118,6 +118,13 @@ func (a *App) addCmd() *cli.Command {
 			}
 			defer s.Close()
 			s.Release()
+			nameOK := func(name string) error { return s.Doc.CheckName(name, r.ID) }
+			if byFlags {
+				// before the secret prompts: a taken name would waste them
+				if err := nameOK(r.Name); err != nil {
+					return err
+				}
+			}
 			if file != "" {
 				recs, err := readRecords(a.In, file)
 				if err != nil {
@@ -142,10 +149,10 @@ func (a *App) addCmd() *cli.Command {
 					}
 				}
 			} else if f := a.form(cmd); f != nil {
-				if err := f.Edit(r, "New "+r.Type); err != nil {
+				if err := f.Edit(r, "New "+r.Type, nameOK); err != nil {
 					return formErr(err)
 				}
-			} else if err := a.fill(r); err != nil {
+			} else if err := a.fill(r, nameOK); err != nil {
 				return err
 			}
 			if _, err := s.Reacquire(); err != nil {
@@ -328,7 +335,9 @@ func (a *App) showCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "show",
 		Usage:     "show a record in full, secrets included",
-		ArgsUsage: "<id>",
+		ArgsUsage: "<id|name>",
+		Description: "The record is named by its id, any unique start of it, or its name (case and spacing\n" +
+			"don't matter; quote a name with spaces).",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "history", Usage: "also show the previous values of its secret fields"},
 			plainFlag(),
@@ -342,7 +351,7 @@ func (a *App) showCmd() *cli.Command {
 				return err
 			}
 			defer s.Close()
-			r, err := s.Doc.Find(cmd.Args().First())
+			r, err := s.Doc.Lookup(cmd.Args().First())
 			if err != nil {
 				return err
 			}
@@ -416,11 +425,12 @@ func (a *App) editCmd() *cli.Command {
 			}
 			s.Release()
 			before := maps.Clone(r.Fields)
+			nameOK := func(name string) error { return s.Doc.CheckName(name, r.ID) }
 			if form != nil {
-				if err := form.Edit(r, fmt.Sprintf("Edit %s %s", r.Type, shortID(r.ID))); err != nil {
+				if err := form.Edit(r, fmt.Sprintf("Edit %s %s", r.Type, shortID(r.ID)), nameOK); err != nil {
 					return formErr(err)
 				}
-			} else if err := a.edit(r); err != nil {
+			} else if err := a.edit(r, nameOK); err != nil {
 				return err
 			}
 			r.Normalize()
@@ -438,6 +448,9 @@ func (a *App) editCmd() *cli.Command {
 			r.UpdatedAt = a.now()
 			if err := a.reacquireFor(s, r, orig); err != nil {
 				return err
+			}
+			if err := s.Doc.CheckName(r.Name, r.ID); err != nil { // taken meanwhile, or a duplicate from before
+				return fmt.Errorf("%v; nothing was saved", err)
 			}
 			if err := s.Save(); err != nil {
 				return err
@@ -707,7 +720,7 @@ func (a *App) importCmd() *cli.Command {
 					added++
 				}
 				if err := s.Doc.Add(in); err != nil {
-					return err
+					return fmt.Errorf("record %d (%s): %w; nothing was imported", i+1, record.Printable(in.Name), err)
 				}
 			}
 			if added+replaced > 0 {
