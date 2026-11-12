@@ -39,8 +39,8 @@ and a `SHA256SUMS` file to check them against:
 
 ```shell
 sha256sum --check --ignore-missing SHA256SUMS   # macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
-tar -xzf digisafe-0.1.0-darwin-arm64.tar.gz
-install -m 0755 digisafe-0.1.0-darwin-arm64/digisafe ~/bin/
+tar -xzf digisafe-1.0.0-darwin-arm64.tar.gz
+install -m 0755 digisafe-1.0.0-darwin-arm64/digisafe ~/bin/
 ```
 
 The macOS binaries aren't signed or notarized: if you downloaded the archive with a browser,

@@ -22,7 +22,7 @@ import (
 
 // Version is the digisafe version. version.sh is the source of truth: `make bump-version`
 // changes both, and version_test.go checks they agree.
-const Version = "0.1.0"
+const Version = "1.0.0"
 
 // Clipboard is how `copy` reaches the system clipboard (replaced in tests).
 type Clipboard interface {
